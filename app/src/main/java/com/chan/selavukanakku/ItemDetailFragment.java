@@ -72,7 +72,7 @@ public class ItemDetailFragment extends Fragment implements EasyPermissions.Perm
             {
                 appBarLayout.setTitle(sheetName);
             }
-            importGoSheet = new ImportGoSheet(getActivity(), importSheetListener, ImportGoSheet.GET_SHEET_DETAILS);
+            importGoSheet = new ImportGoSheet(getActivity(), importSheetListener, ImportGoSheet.GET_SHEET_DETAILS, sheetName);
         }
     }
 

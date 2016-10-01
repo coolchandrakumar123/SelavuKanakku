@@ -55,8 +55,9 @@ public class ImportGoSheet
 
     public static final int GET_SHEET_LIST = 101;
     public static final int GET_SHEET_DETAILS = 102;
+    private String sheetName = null;
 
-    public ImportGoSheet(Context context, ImportSheetListener importSheetListener, int actionType)
+    public ImportGoSheet(Context context, ImportSheetListener importSheetListener, int actionType, String sheetName)
     {
         // Initialize credentials and service object.
         //this.mCredential = GoogleAccountCredential.usingOAuth2(context, Arrays.asList(SCOPES)).setBackOff(new ExponentialBackOff());
@@ -64,6 +65,7 @@ public class ImportGoSheet
         this.activity = ((Activity) context);
         this.importSheetListener = importSheetListener;
         this.actionType = actionType;
+        this.sheetName = sheetName;
     }
 
     public void getResultsFromApi()
@@ -186,7 +188,6 @@ public class ImportGoSheet
     {
         private com.google.api.services.sheets.v4.Sheets mService = null;
         private Exception mLastError = null;
-        private String sheetName = null;
         private String spreadsheetId = null;
         private int actionType;
 
@@ -195,7 +196,6 @@ public class ImportGoSheet
             HttpTransport transport = AndroidHttp.newCompatibleTransport();
             JsonFactory jsonFactory = JacksonFactory.getDefaultInstance();
             mService = new com.google.api.services.sheets.v4.Sheets.Builder(transport, jsonFactory, credential).setApplicationName(activity.getString(R.string.app_name)).build();
-            //this.sheetName = sheetName;
             spreadsheetId = "1bgGu_F0LJ4T7Jigtk6bEaO_nHazofIkoRIVjC6c9q50";
             this.actionType = actionType;
         }
@@ -244,7 +244,7 @@ public class ImportGoSheet
             //String range = "Class Data!A2:E";
             List<SheetContent> results = new ArrayList<>();
             Sheets.Spreadsheets spreadsheets = this.mService.spreadsheets();
-            String range = "Sheet2!A2:B";
+            String range = sheetName + "!A2:B";
             ValueRange response = spreadsheets.values().get(spreadsheetId, range).execute();
             List<List<Object>> values = response.getValues();
             if(values != null)

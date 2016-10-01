@@ -75,7 +75,7 @@ public class ItemListActivity extends AppCompatActivity implements EasyPermissio
         {
             mTwoPane = true;
         }
-        importGoSheet = new ImportGoSheet(this, importSheetListener, ImportGoSheet.GET_SHEET_LIST);
+        importGoSheet = new ImportGoSheet(this, importSheetListener, ImportGoSheet.GET_SHEET_LIST, null);
         FloatingActionButton fab = (FloatingActionButton) findViewById(R.id.fab);
         fab.setOnClickListener(new View.OnClickListener()
         {
