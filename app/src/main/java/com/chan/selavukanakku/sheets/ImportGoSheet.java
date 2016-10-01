@@ -5,6 +5,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
+import com.chan.selavukanakku.R;
 import com.google.android.gms.common.ConnectionResult;
 import com.google.android.gms.common.GoogleApiAvailability;
 import com.google.api.client.extensions.android.http.AndroidHttp;
@@ -15,14 +16,17 @@ import com.google.api.client.http.HttpTransport;
 import com.google.api.client.json.JsonFactory;
 import com.google.api.client.json.jackson2.JacksonFactory;
 import com.google.api.client.util.ExponentialBackOff;
+import com.google.api.services.sheets.v4.Sheets;
 import com.google.api.services.sheets.v4.SheetsScopes;
+import com.google.api.services.sheets.v4.model.BatchGetValuesResponse;
+import com.google.api.services.sheets.v4.model.Sheet;
+import com.google.api.services.sheets.v4.model.Spreadsheet;
 import com.google.api.services.sheets.v4.model.ValueRange;
 
 import android.Manifest;
 import android.accounts.AccountManager;
 import android.app.Activity;
 import android.app.Dialog;
-import android.app.ProgressDialog;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
@@ -40,22 +44,26 @@ public class ImportGoSheet
     static final int REQUEST_AUTHORIZATION = 1001;
     static final int REQUEST_GOOGLE_PLAY_SERVICES = 1002;
     static final int REQUEST_PERMISSION_GET_ACCOUNTS = 1003;
-    private static final String BUTTON_TEXT = "Call Google Sheets API";
     private static final String PREF_ACCOUNT_NAME = "accountName";
-    private static final String[] SCOPES = {SheetsScopes.SPREADSHEETS_READONLY};
-    GoogleAccountCredential mCredential;
+    //private static final String[] SCOPES = {SheetsScopes.SPREADSHEETS_READONLY};
+    //GoogleAccountCredential mCredential;
     //ProgressDialog mProgress;
     private Context context;
     private Activity activity;
     private ImportSheetListener importSheetListener;
+    private int actionType;
 
-    public ImportGoSheet(Context context, ImportSheetListener importSheetListener)
+    public static final int GET_SHEET_LIST = 101;
+    public static final int GET_SHEET_DETAILS = 102;
+
+    public ImportGoSheet(Context context, ImportSheetListener importSheetListener, int actionType)
     {
         // Initialize credentials and service object.
-        this.mCredential = GoogleAccountCredential.usingOAuth2(context, Arrays.asList(SCOPES)).setBackOff(new ExponentialBackOff());
+        //this.mCredential = GoogleAccountCredential.usingOAuth2(context, Arrays.asList(SCOPES)).setBackOff(new ExponentialBackOff());
         this.context = context;
         this.activity = ((Activity) context);
         this.importSheetListener = importSheetListener;
+        this.actionType = actionType;
     }
 
     public void getResultsFromApi()
@@ -64,7 +72,7 @@ public class ImportGoSheet
         {
             acquireGooglePlayServices();
         }
-        else if(mCredential.getSelectedAccountName() == null)
+        else if(SheetsUtil.getInstance().mCredential.getSelectedAccountName() == null)
         {
             chooseAccount();
         }
@@ -74,7 +82,7 @@ public class ImportGoSheet
         }
         else
         {
-            new MakeRequestTask(mCredential).execute();
+            new MakeRequestTask(SheetsUtil.getInstance().mCredential, actionType).execute();
         }
     }
 
@@ -110,13 +118,13 @@ public class ImportGoSheet
             String accountName = activity.getPreferences(Context.MODE_PRIVATE).getString(PREF_ACCOUNT_NAME, null);
             if(accountName != null)
             {
-                mCredential.setSelectedAccountName(accountName);
+                SheetsUtil.getInstance().mCredential.setSelectedAccountName(accountName);
                 getResultsFromApi();
             }
             else
             {
                 // Start a dialog from which the user can choose an account
-                activity.startActivityForResult(mCredential.newChooseAccountIntent(), REQUEST_ACCOUNT_PICKER);
+                activity.startActivityForResult(SheetsUtil.getInstance().mCredential.newChooseAccountIntent(), REQUEST_ACCOUNT_PICKER);
             }
         }
         else
@@ -157,7 +165,7 @@ public class ImportGoSheet
                         SharedPreferences.Editor editor = settings.edit();
                         editor.putString(PREF_ACCOUNT_NAME, accountName);
                         editor.apply();
-                        mCredential.setSelectedAccountName(accountName);
+                        SheetsUtil.getInstance().mCredential.setSelectedAccountName(accountName);
                         getResultsFromApi();
                     }
                 }
@@ -174,26 +182,34 @@ public class ImportGoSheet
     /**
      * An asynchronous task that handles the Google Sheets API call. Placing the API calls in their own task ensures the UI stays responsive.
      */
-    private class MakeRequestTask extends AsyncTask<Void, Void, List<String>>
+    private class MakeRequestTask extends AsyncTask<Void, Void, List<SheetContent>>
     {
         private com.google.api.services.sheets.v4.Sheets mService = null;
         private Exception mLastError = null;
         private String sheetName = null;
+        private String spreadsheetId = null;
+        private int actionType;
 
-        public MakeRequestTask(GoogleAccountCredential credential)
+        public MakeRequestTask(GoogleAccountCredential credential, int actionType)
         {
             HttpTransport transport = AndroidHttp.newCompatibleTransport();
             JsonFactory jsonFactory = JacksonFactory.getDefaultInstance();
-            mService = new com.google.api.services.sheets.v4.Sheets.Builder(transport, jsonFactory, credential).setApplicationName("Google Sheets API Android Quickstart").build();
-            this.sheetName = sheetName;
+            mService = new com.google.api.services.sheets.v4.Sheets.Builder(transport, jsonFactory, credential).setApplicationName(activity.getString(R.string.app_name)).build();
+            //this.sheetName = sheetName;
+            spreadsheetId = "1bgGu_F0LJ4T7Jigtk6bEaO_nHazofIkoRIVjC6c9q50";
+            this.actionType = actionType;
         }
 
         @Override
-        protected List<String> doInBackground(Void... params)
+        protected List<SheetContent> doInBackground(Void... params)
         {
             try
             {
-                return getDataFromApi();
+                if(actionType == GET_SHEET_LIST)
+                {
+                    return getSheetListApi();
+                }
+                return getSheetDetailsApi();
             }
             catch(Exception e)
             {
@@ -203,25 +219,41 @@ public class ImportGoSheet
             }
         }
 
-        /**
-         * Fetch a list of names and majors of students in a sample spreadsheet: https://docs.google.com/spreadsheets/d/1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms/edit
-         *
-         * @return List of names and majors
-         * @throws IOException
-         */
-        private List<String> getDataFromApi() throws IOException
+        private List<SheetContent> getSheetListApi() throws IOException
         {
-            String spreadsheetId = "1bgGu_F0LJ4T7Jigtk6bEaO_nHazofIkoRIVjC6c9q50";
             //String range = "Class Data!A2:E";
+            List<SheetContent> results = new ArrayList<>();
+            Sheets.Spreadsheets spreadsheets = this.mService.spreadsheets();
+            Spreadsheet spreadSheet = spreadsheets.get(spreadsheetId).setIncludeGridData(false).execute ();
+            List<Sheet> sheetsList = spreadSheet.getSheets();
+            if(sheetsList != null)
+            {
+                int index = 0;
+                for(Sheet sheet : sheetsList)
+                {
+                    SheetContent sheetContent = new SheetContent((++index + ""), sheet.getProperties().getTitle(), sheet.getProperties().getSheetType());
+                    results.add(sheetContent);
+                }
+            }
+
+            return results;
+        }
+
+        private List<SheetContent> getSheetDetailsApi() throws IOException
+        {
+            //String range = "Class Data!A2:E";
+            List<SheetContent> results = new ArrayList<>();
+            Sheets.Spreadsheets spreadsheets = this.mService.spreadsheets();
             String range = "Sheet2!A2:B";
-            List<String> results = new ArrayList<>();
-            ValueRange response = this.mService.spreadsheets().values().get(spreadsheetId, range).execute();
+            ValueRange response = spreadsheets.values().get(spreadsheetId, range).execute();
             List<List<Object>> values = response.getValues();
             if(values != null)
             {
+                int index = 0;
                 for(List row : values)
                 {
-                    results.add(row.get(0) + ", " + row.get(1));
+                    SheetContent sheetContent = new SheetContent((++index + ""), (String) row.get(0), (String) row.get(1));
+                    results.add(sheetContent);
                 }
             }
             return results;
@@ -234,7 +266,7 @@ public class ImportGoSheet
         }
 
         @Override
-        protected void onPostExecute(List<String> output)
+        protected void onPostExecute(List<SheetContent> output)
         {
             //mProgress.hide();
             if(output == null || output.size() == 0)
@@ -243,8 +275,8 @@ public class ImportGoSheet
             }
             else
             {
-                output.add(0, "Data retrieved using the Google Sheets API:");
-                importSheetListener.onSheetLoad(TextUtils.join("\n", output));
+                //output.add(0, "Data retrieved using the Google Sheets API:");
+                importSheetListener.onSheetContentLoaded(output);
             }
         }
 
@@ -277,5 +309,7 @@ public class ImportGoSheet
     public interface ImportSheetListener
     {
         void onSheetLoad(String sheetContent);
+
+        void onSheetContentLoaded(List<SheetContent> sheetContentList);
     }
 }
