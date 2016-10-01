@@ -9,7 +9,8 @@
     android:divider="?android:attr/dividerHorizontal"
     android:orientation="horizontal"
     android:showDividers="middle"
-    tools:context="com.chan.selavukanakku.ItemListActivity">
+    tools:context="com.chan.selavukanakku.ItemListActivity"
+    android:visibility="gone">
 
     <!--
     This layout is a two-pane layout for the Items
